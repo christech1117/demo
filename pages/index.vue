@@ -5,27 +5,31 @@
         <h1>
           {{ questionIndex > polls.length ? "Completed" : "Today's Poll" }}
         </h1>
-        {{ questionIndex }}
-        {{ polls.length }}
+
         <div v-for="(poll, index) in polls" :key="index">
           <div v-if="questionIndex === poll.id">
             <h2>{{ `${poll.id}.${poll.title}` }}</h2>
             <h2>
               {{ `(${poll.answer.type}) ${formatDate(poll.publishedDate)}` }}
             </h2>
-            <el-progress
-              class="mb-5"
-              type="circle"
-              :percentage="percentage"
-            ></el-progress>
+
+            <div>
+              <el-progress
+                class="mb-5"
+                type="circle"
+                :percentage="percentage"
+              ></el-progress>
+            </div>
             <div v-if="poll.answer.type === 'Single'">
               <button
                 v-for="(option, index2) in poll.answer.options"
                 :key="index2"
                 class="banner-btn"
-                @click="submit(poll.id, option.id)"
+                @click="submit([option.label])"
               >
-                {{ option.label }}
+                {{
+                  `${option.label}(${result[option.label] ? result[option.label].length : 0})`
+                }}
               </button>
             </div>
             <div v-else-if="poll.answer.type === 'Multi'">
@@ -34,11 +38,11 @@
                 :key="index2"
                 class="banner-btn"
                 :style="
-                  selected.includes(option.id) ? 'border: 1px solid blue' : ''
+                  selected.includes(option.label) ? 'border: 1px solid blue' : ''
                 "
-                @click="selectOption(option.id)"
+                @click="selectOption(option.label)"
               >
-                {{ option.label }}
+                {{ `${option.label}` }}
               </button>
 
               <br />
@@ -46,7 +50,7 @@
               <button
                 class="banner-btn"
                 style="color: red; border: 1px solid red"
-                @click="submit(poll.id, selected)"
+                @click="submit(selected)"
                 :disabled="selected.length === 0"
               >
                 Submit
@@ -56,7 +60,7 @@
         </div>
 
         <div v-if="questionIndex > polls.length">
-          <button class="banner-btn" @click="questionIndex = 1">Again</button>
+          <button class="banner-btn" @click="reload()">Again</button>
         </div>
       </div>
     </div>
@@ -68,118 +72,10 @@ export default {
   data() {
     return {
       questionIndex: 1,
-      polls: [
-        {
-          id: 1,
-          title: "Is bitcoin worth the time and money that mining requires?",
-          publishedDate: 1516605447,
-          answer: {
-            type: "Single",
-            options: [
-              {
-                id: 1,
-                label: "Yes",
-              },
-              {
-                id: 2,
-                label: "No",
-              },
-            ],
-          },
-        },
-        {
-          id: 2,
-          title: "Should chatbots replace humans in customer service jobs?",
-          publishedDate: 1516000647,
-          answer: {
-            type: "Single",
-            options: [
-              {
-                id: 3,
-                label: "Yes",
-              },
-              {
-                id: 4,
-                label: "No",
-              },
-            ],
-          },
-        },
-        {
-          id: 3,
-          title: "How are we feeling about 2018?",
-          publishedDate: 1515568647,
-          answer: {
-            type: "Single",
-            options: [
-              {
-                id: 5,
-                label: "Hopeful",
-              },
-              {
-                id: 6,
-                label: "Doubtful",
-              },
-            ],
-          },
-        },
-        {
-          id: 4,
-          title:
-            "Which country/region have you ever visited? (Select all that applies)",
-          publishedDate: 1515482247,
-          answer: {
-            type: "Multi",
-            options: [
-              {
-                id: 7,
-                label: "Hong Kong",
-              },
-              {
-                id: 8,
-                label: "China",
-              },
-              {
-                id: 9,
-                label: "Australia",
-              },
-              {
-                id: 10,
-                label: "Thailand",
-              },
-              {
-                id: 11,
-                label: "Korea",
-              },
-              {
-                id: 12,
-                label: "Japan",
-              },
-            ],
-          },
-        },
-        {
-          id: 5,
-          title:
-            "Will new benefits encourage you to study or work in mainland?",
-          publishedDate: 1515309447,
-          answer: {
-            type: "Single",
-            options: [
-              {
-                id: 13,
-                label: "Yes",
-              },
-              {
-                id: 14,
-                label: "No",
-              },
-            ],
-          },
-        },
-      ],
+      polls: [],
       selected: [],
       percentage: 0,
+      result: [],
     };
   },
   mounted() {
@@ -187,35 +83,50 @@ export default {
   },
   methods: {
     async fetchData() {
-      await this.$axios.get(`/polls`).then((response) => {
-        this.polls = response.data;
+      await this.$axios.get(`/polly`).then((response) => {
+        this.polls = response.data.data;
 
         this.$axios
-          .get(`/poll_answer`, { id: this.questionIndex })
+          .post(`/polly/result`, { id: this.questionIndex })
           .then((response) => {
-            console.warn(response.data);
+            let data = response.data.data;
+            this.result = this.category(data);
+            this.percentage = data.length;
           });
       });
     },
-    submit(pollId, optionId) {
+    category(data) {
+      return data.reduce((group, item) => {
+        const { answer } = item;
+        group[answer] = group[answer] ?? [];
+        group[answer].push(item);
+        return group;
+      }, {});
+    },
+    submit(option) {
       this.$axios
-        .post(`/poll_answer`, { id: pollId, answer: optionId })
+        .post(`/polly`, { id: this.questionIndex, answer: option })
         .then((response) => {
-          console.warn(response.data);
+          // console.warn(response.data);
         });
 
-      this.$axios.get(`/poll_answer`, { id: pollId + 1 }).then((response) => {
-        console.warn(response.data);
-      });
+      this.$axios
+        .post(`/polly/result`, { id: this.questionIndex + 1 })
+        .then((response) => {
+          let data = response.data.data;
+          this.result = this.category(data);
+          console.warn(this.result)
+        });
 
       this.questionIndex += 1;
     },
-    selectOption(id) {
-      const index = this.selected.indexOf(id);
+    selectOption(label) {
+      const index = this.selected.indexOf(label);
+      console.warn(index);
       if (index > -1) {
         this.selected.splice(index, 1);
       } else {
-        this.selected.push(id);
+        this.selected.push(label);
       }
     },
     formatDate(d) {
@@ -233,6 +144,9 @@ export default {
         ":" +
         dateFormat.getSeconds()
       );
+    },
+    reload() {
+      window.location.reload();
     },
   },
 };
@@ -602,6 +516,10 @@ body {
 :after,
 :before {
   box-sizing: border-box;
+}
+
+* {
+  color: #fff;
 }
 
 .site-logo {
